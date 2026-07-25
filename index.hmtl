@@ -200,7 +200,7 @@
 <body>
 
   <h1>色カメラ</h1>
-  <p class="hint">中心の枠に判定したいものを合わせてください</p>
+  <p class="hint"> 中心の枠に判定したいものを合わせてください</p>
 
   <div class="camera-wrap">
     <video id="video" autoplay playsinline muted></video>
