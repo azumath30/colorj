@@ -195,12 +195,31 @@
   }
 
   button { cursor: pointer; }
+
+  .start-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.8);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 20px;
+    font-size: 1.1rem;
+    z-index: 100;
+  }
 </style>
 </head>
 <body>
 
+  <div class="start-overlay" id="startOverlay">
+    画面をタップして開始<br>
+    <span style="font-size:0.8rem; color:#ccc;">（iPhoneでは読み上げを有効にするために必要です）</span>
+  </div>
+
   <h1>色カメラ</h1>
-  <p class="hint"> 中心の枠に判定したいものを合わせてください</p>
+  <p class="hint">中心の枠に判定したいものを合わせてください</p>
 
   <div class="camera-wrap">
     <video id="video" autoplay playsinline muted></video>
@@ -425,17 +444,31 @@
 
   // ---- 読み上げ ---------------------------------------------------------
   const muteBtn = document.getElementById("muteBtn");
+  const startOverlay = document.getElementById("startOverlay");
   let speechEnabled = true;
   let stableLabel = null;
   let stableSince = 0;
   let spokenLabel = null;
+  let currentUtterance = null; // Safari対策: GCで消えないよう参照を保持しておく
+
+  // iOS Safari はユーザー操作なしの読み上げをブロックするため、
+  // 最初の画面タップで一度だけ空の発話を行い、読み上げ機能を「解禁」する。
+  function unlockSpeech() {
+    if (!("speechSynthesis" in window)) return;
+    const primer = new SpeechSynthesisUtterance("");
+    window.speechSynthesis.speak(primer);
+  }
+  startOverlay.addEventListener("click", () => {
+    unlockSpeech();
+    startOverlay.style.display = "none";
+  }, { once: true });
 
   function speak(text) {
     if (!speechEnabled || !("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = "ja-JP";
-    window.speechSynthesis.speak(utter);
+    currentUtterance = new SpeechSynthesisUtterance(text);
+    currentUtterance.lang = "ja-JP";
+    window.speechSynthesis.speak(currentUtterance);
   }
 
   function maybeSpeak(label) {
