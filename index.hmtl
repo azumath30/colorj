@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>色カメラ - 色判定アプリ</title>
+<style>
+  :root {
+    --bg: #1b1c1f;
+    --panel: #26282c;
+    --panel-2: #2f3237;
+    --text: #f2f2f2;
+    --muted: #9a9ea5;
+    --accent: #4fc3f7;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Hiragino Sans", "Yu Gothic", "Segoe UI", sans-serif;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 12px;
+    gap: 14px;
+  }
+  h1 {
+    font-size: 1.2rem;
+    margin: 4px 0 0;
+    text-align: center;
+  }
+  .hint {
+    color: var(--muted);
+    font-size: 0.8rem;
+    text-align: center;
+    margin: 0;
+  }
+
+  .camera-wrap {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    aspect-ratio: 4 / 3;
+    background: #000;
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .crosshair {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 44px; height: 44px;
+    transform: translate(-50%, -50%);
+    border: 2px solid rgba(255,255,255,0.85);
+    border-radius: 8px;
+    pointer-events: none;
+  }
+  .crosshair::before, .crosshair::after {
+    content: "";
+    position: absolute;
+    background: rgba(255,255,255,0.85);
+  }
+  .crosshair::before { top: 50%; left: -8px; right: -8px; height: 1px; transform: translateY(-50%); }
+  .crosshair::after { left: 50%; top: -8px; bottom: -8px; width: 1px; transform: translateX(-50%); }
+
+  .cam-error {
+    position: absolute; inset: 0;
+    display: none;
+    align-items: center; justify-content: center;
+    padding: 20px; text-align: center;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+
+  .cam-controls {
+    position: absolute;
+    top: 8px; right: 8px;
+    display: flex; gap: 6px;
+  }
+  .icon-btn {
+    background: rgba(0,0,0,0.5);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 0.75rem;
+  }
+
+  .result-panel {
+    width: 100%;
+    max-width: 480px;
+    background: var(--panel);
+    border-radius: var(--radius);
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .sample-swatch {
+    width: 64px; height: 64px;
+    border-radius: 12px;
+    border: 2px solid rgba(255,255,255,0.25);
+    flex-shrink: 0;
+  }
+  .result-text { flex: 1; min-width: 0; }
+  .result-label {
+    font-size: 1.6rem;
+    font-weight: 700;
+    line-height: 1.3;
+  }
+  .result-sub {
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .palette-section {
+    width: 100%;
+    max-width: 480px;
+  }
+  .palette-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .palette-head h2 {
+    font-size: 0.95rem;
+    margin: 0;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .reset-btn {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: 0.8rem;
+    padding: 4px;
+  }
+  .palette-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+    gap: 10px;
+  }
+  .palette-item {
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .palette-item .sw {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.2);
+  }
+  .palette-item .nm {
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+  .palette-item .btn-row {
+    display: flex;
+    gap: 4px;
+    width: 100%;
+  }
+  .palette-item .rgb-text {
+    font-size: 0.62rem;
+    color: var(--muted);
+  }
+  .palette-item button {
+    width: 100%;
+    background: var(--panel-2);
+    color: var(--text);
+    border: none;
+    border-radius: 6px;
+    padding: 5px 2px;
+    font-size: 0.68rem;
+  }
+  .palette-item button:active {
+    background: var(--accent);
+    color: #10202a;
+  }
+
+  button { cursor: pointer; }
+</style>
+</head>
+<body>
+
+  <h1>色カメラ</h1>
+  <p class="hint">中心の枠に判定したいものを合わせてください</p>
+
+  <div class="camera-wrap">
+    <video id="video" autoplay playsinline muted></video>
+    <div class="crosshair"></div>
+    <div class="cam-controls">
+      <button class="icon-btn" id="muteBtn">🔊 読み上げ</button>
+      <button class="icon-btn" id="switchCamBtn" style="display:none;">カメラ切替</button>
+    </div>
+    <div class="cam-error" id="camError">
+      カメラを起動できませんでした。<br>
+      ブラウザのカメラ許可設定をご確認ください。<br>
+      （https:// または localhost での表示が必要です）
+    </div>
+  </div>
+
+  <div class="result-panel">
+    <div class="sample-swatch" id="sampleSwatch"></div>
+    <div class="result-text">
+      <div class="result-label" id="resultLabel">判定中…</div>
+      <div class="result-sub" id="resultSub"></div>
+    </div>
+  </div>
+
+  <div class="palette-section">
+    <div class="palette-head">
+      <h2>登録色（色鉛筆12色プリセット）</h2>
+      <button class="reset-btn" id="resetBtn">プリセットに戻す</button>
+    </div>
+    <div class="palette-grid" id="paletteGrid"></div>
+  </div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---- 色鉛筆12色のプリセット -------------------------------------------
+  const PRESET_COLORS = [
+    { name: "赤",     hex: "#e6002d" },
+    { name: "橙",     hex: "#f39800" },
+    { name: "黄",     hex: "#fff100" },
+    { name: "黄緑",   hex: "#8fc31f" },
+    { name: "緑",     hex: "#009944" },
+    { name: "水色",   hex: "#00a0e9" },
+    { name: "青",     hex: "#0068b7" },
+    { name: "紫",     hex: "#92278f" },
+    { name: "ピンク", hex: "#e4007f" },
+    { name: "茶",     hex: "#814721" },
+    { name: "黒",     hex: "#231815" },
+    { name: "白",     hex: "#ffffff" },
+  ];
+  const STORAGE_KEY = "colorCameraPalette_v1";
+
+  // 判定のしきい値（CIE76 のΔE, 経験的な値）
+  const THRESH_EXACT = 14;   // これ以下なら「赤」のようにそのまま
+  const THRESH_FUZZY = 30;   // これ以下なら「赤っぽい」
+  // それより離れていたら「何色かわかりません」
+
+  const SAMPLE_RADIUS = 14;  // 中心点まわりの平均を取る半径(px, 映像の実解像度基準)
+  const SAMPLE_INTERVAL_MS = 200;
+  const SPEECH_STABLE_MS = 500; // 判定がこの時間ぶれずに続いたら読み上げる
+
+  // ---- 色変換ユーティリティ ------------------------------------------------
+  function hexToRgb(hex) {
+    const m = hex.replace("#", "");
+    const r = parseInt(m.substring(0, 2), 16);
+    const g = parseInt(m.substring(2, 4), 16);
+    const b = parseInt(m.substring(4, 6), 16);
+    return [r, g, b];
+  }
+  function rgbToHex(r, g, b) {
+    const h = (n) => n.toString(16).padStart(2, "0");
+    return `#${h(r)}${h(g)}${h(b)}`;
+  }
+  function srgbToLinear(c) {
+    c /= 255;
+    return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  }
+  function rgbToLab(r, g, b) {
+    const rl = srgbToLinear(r), gl = srgbToLinear(g), bl = srgbToLinear(b);
+    const x = rl * 0.4124564 + gl * 0.3575761 + bl * 0.1804375;
+    const y = rl * 0.2126729 + gl * 0.7151522 + bl * 0.0721750;
+    const z = rl * 0.0193339 + gl * 0.1191920 + bl * 0.9503041;
+    const xn = 0.95047, yn = 1.0, zn = 1.08883;
+    const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+    const fx = f(x / xn), fy = f(y / yn), fz = f(z / zn);
+    return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+  }
+  function labDist(a, b) {
+    const dl = a[0] - b[0], da = a[1] - b[1], db = a[2] - b[2];
+    return Math.sqrt(dl * dl + da * da + db * db);
+  }
+
+  // ---- パレット状態 ---------------------------------------------------
+  let palette = loadPalette();
+
+  function loadPalette() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        if (Array.isArray(saved) && saved.length === PRESET_COLORS.length) {
+          return saved;
+        }
+      }
+    } catch (e) { /* ignore broken storage */ }
+    return PRESET_COLORS.map((c) => ({ ...c }));
+  }
+  function savePalette() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(palette));
+  }
+
+  // 事前にLab値をキャッシュ
+  function paletteWithLab() {
+    return palette.map((c) => {
+      const rgb = hexToRgb(c.hex);
+      return { ...c, rgb, lab: rgbToLab(...rgb) };
+    });
+  }
+  let paletteLab = paletteWithLab();
+
+  // ---- パレットUI描画 ---------------------------------------------------
+  const paletteGrid = document.getElementById("paletteGrid");
+  function renderPalette() {
+    paletteGrid.innerHTML = "";
+    palette.forEach((c, i) => {
+      const item = document.createElement("div");
+      item.className = "palette-item";
+      item.innerHTML = `
+        <div class="sw" style="background:${c.hex}"></div>
+        <div class="nm">${c.name}</div>
+        <div class="rgb-text">${c.hex}</div>
+        <div class="btn-row">
+          <button data-action="register" data-idx="${i}">この色を登録</button>
+          <button data-action="rename" data-idx="${i}">名前を変更</button>
+        </div>
+      `;
+      paletteGrid.appendChild(item);
+    });
+  }
+  paletteGrid.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-idx]");
+    if (!btn) return;
+    const idx = Number(btn.dataset.idx);
+    const action = btn.dataset.action;
+
+    if (action === "register") {
+      if (!lastSample) return;
+      palette[idx].hex = rgbToHex(...lastSample);
+      paletteLab = paletteWithLab();
+      savePalette();
+      renderPalette();
+    } else if (action === "rename") {
+      const newName = window.prompt("新しい色の名前を入力してください", palette[idx].name);
+      if (newName === null) return; // キャンセル
+      const trimmed = newName.trim();
+      if (!trimmed) return;
+      palette[idx].name = trimmed;
+      paletteLab = paletteWithLab();
+      savePalette();
+      renderPalette();
+    }
+  });
+
+  document.getElementById("resetBtn").addEventListener("click", () => {
+    palette = PRESET_COLORS.map((c) => ({ ...c }));
+    paletteLab = paletteWithLab();
+    savePalette();
+    renderPalette();
+  });
+
+  renderPalette();
+
+  // ---- カメラ ---------------------------------------------------------
+  const video = document.getElementById("video");
+  const camError = document.getElementById("camError");
+  const switchCamBtn = document.getElementById("switchCamBtn");
+
+  const sampleCanvas = document.createElement("canvas");
+  const size = SAMPLE_RADIUS * 2;
+  sampleCanvas.width = size;
+  sampleCanvas.height = size;
+  const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
+
+  let currentStream = null;
+  let videoDevices = [];
+  let currentDeviceIndex = 0;
+  let lastSample = null; // [r,g,b] of the most recent center average
+
+  async function listCameras() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      videoDevices = devices.filter((d) => d.kind === "videoinput");
+      switchCamBtn.style.display = videoDevices.length > 1 ? "inline-block" : "none";
+    } catch (e) { /* enumerateDevices may fail before permission; ignore */ }
+  }
+
+  async function startCamera() {
+    if (currentStream) {
+      currentStream.getTracks().forEach((t) => t.stop());
+    }
+    const constraints = videoDevices.length
+      ? { video: { deviceId: { exact: videoDevices[currentDeviceIndex].deviceId } }, audio: false }
+      : { video: { facingMode: { ideal: "environment" } }, audio: false };
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      currentStream = stream;
+      video.srcObject = stream;
+      camError.style.display = "none";
+      await listCameras();
+    } catch (e) {
+      camError.style.display = "flex";
+    }
+  }
+
+  switchCamBtn.addEventListener("click", () => {
+    if (videoDevices.length < 2) return;
+    currentDeviceIndex = (currentDeviceIndex + 1) % videoDevices.length;
+    startCamera();
+  });
+
+  startCamera();
+
+  // ---- 読み上げ ---------------------------------------------------------
+  const muteBtn = document.getElementById("muteBtn");
+  let speechEnabled = true;
+  let stableLabel = null;
+  let stableSince = 0;
+  let spokenLabel = null;
+
+  function speak(text) {
+    if (!speechEnabled || !("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = "ja-JP";
+    window.speechSynthesis.speak(utter);
+  }
+
+  function maybeSpeak(label) {
+    const now = performance.now();
+    if (label !== stableLabel) {
+      stableLabel = label;
+      stableSince = now;
+      return;
+    }
+    if (spokenLabel !== label && now - stableSince >= SPEECH_STABLE_MS) {
+      spokenLabel = label;
+      speak(label);
+    }
+  }
+
+  muteBtn.addEventListener("click", () => {
+    speechEnabled = !speechEnabled;
+    muteBtn.textContent = speechEnabled ? "🔊 読み上げ" : "🔇 読み上げ";
+    if (!speechEnabled) window.speechSynthesis.cancel();
+  });
+
+  // ---- 中心色のサンプリングと判定 ----------------------------------------
+  const sampleSwatch = document.getElementById("sampleSwatch");
+  const resultLabel = document.getElementById("resultLabel");
+  const resultSub = document.getElementById("resultSub");
+
+  function sampleCenterColor() {
+    if (!video.videoWidth || !video.videoHeight) return null;
+    const sx = Math.max(0, video.videoWidth / 2 - SAMPLE_RADIUS);
+    const sy = Math.max(0, video.videoHeight / 2 - SAMPLE_RADIUS);
+    sampleCtx.drawImage(video, sx, sy, size, size, 0, 0, size, size);
+    const data = sampleCtx.getImageData(0, 0, size, size).data;
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      r += data[i]; g += data[i + 1]; b += data[i + 2];
+      n++;
+    }
+    return [Math.round(r / n), Math.round(g / n), Math.round(b / n)];
+  }
+
+  function classify(rgb) {
+    const lab = rgbToLab(...rgb);
+    let best = null, bestDist = Infinity;
+    for (const c of paletteLab) {
+      const d = labDist(lab, c.lab);
+      if (d < bestDist) { bestDist = d; best = c; }
+    }
+    if (!best) return { label: "何色かわかりません", sub: "" };
+    if (bestDist <= THRESH_EXACT) {
+      return { label: best.name, sub: `近い登録色：${best.name}（ΔE ${bestDist.toFixed(1)}）` };
+    }
+    if (bestDist <= THRESH_FUZZY) {
+      return { label: `${best.name}っぽい`, sub: `一番近い登録色：${best.name}（ΔE ${bestDist.toFixed(1)}）` };
+    }
+    return { label: "何色かわかりません", sub: `一番近い登録色：${best.name}（ΔE ${bestDist.toFixed(1)}）` };
+  }
+
+  function tick() {
+    const rgb = sampleCenterColor();
+    if (rgb) {
+      lastSample = rgb;
+      sampleSwatch.style.background = rgbToHex(...rgb);
+      const result = classify(rgb);
+      resultLabel.textContent = result.label;
+      resultSub.textContent = result.sub;
+      maybeSpeak(result.label);
+    }
+  }
+  setInterval(tick, SAMPLE_INTERVAL_MS);
+})();
+</script>
+</body>
+</html>
